@@ -13,6 +13,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl
+
       - name: Create empty directories for volumes
         run: |
           mkdir -p mysql data influxdb grafana
@@ -22,24 +27,27 @@ jobs:
         run: docker compose config
 
       - name: Start containers
-        run: docker compose up -d
+        run: |
+          docker compose up -d
+          echo "Waiting 10s for initial startup..."
+          sleep 10
 
       - name: Check container status
         run: docker ps -a
 
       - name: Wait for LibreNMS to be ready
         run: |
-          # 等待最多 2 分鐘，使用 HTTP 狀態碼判斷 (200 或 302 均視為成功)
-          for i in {1..24}; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+          # 等待最多 5 分鐘 (給資料庫初始化的時間)
+          for i in {1..60}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost || echo "000")
             if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" ]]; then
               echo "LibreNMS is UP! (HTTP $HTTP_CODE)"
               exit 0
             fi
-            echo "Waiting for LibreNMS... (Current: HTTP $HTTP_CODE) ($i)"
+            echo "Waiting for LibreNMS... (Current: HTTP $HTTP_CODE) ($i/60)"
             sleep 5
           done
-          echo "LibreNMS failed to respond with 200/302 in time"
+          echo "LibreNMS failed to respond in time"
           docker compose logs librenms
           exit 1
 
