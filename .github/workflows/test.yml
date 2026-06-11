@@ -29,15 +29,17 @@ jobs:
 
       - name: Wait for LibreNMS to be ready
         run: |
+          # 等待最多 2 分鐘，使用 HTTP 狀態碼判斷 (200 或 302 均視為成功)
           for i in {1..24}; do
-            if curl -s http://localhost | grep -q "302 Found\|LibreNMS"; then
-              echo "LibreNMS is UP!"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+            if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" ]]; then
+              echo "LibreNMS is UP! (HTTP $HTTP_CODE)"
               exit 0
             fi
-            echo "Waiting for LibreNMS... ($i)"
+            echo "Waiting for LibreNMS... (Current: HTTP $HTTP_CODE) ($i)"
             sleep 5
           done
-          echo "LibreNMS failed to start in time"
+          echo "LibreNMS failed to respond with 200/302 in time"
           docker compose logs librenms
           exit 1
 
