@@ -1,0 +1,46 @@
+name: Docker-LibreNMS CI Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create empty directories for volumes
+        run: |
+          mkdir -p mysql data influxdb grafana
+          chmod -R 777 mysql data influxdb grafana
+
+      - name: Validate Docker Compose
+        run: docker compose config
+
+      - name: Start containers
+        run: docker compose up -d
+
+      - name: Check container status
+        run: docker ps -a
+
+      - name: Wait for LibreNMS to be ready
+        run: |
+          for i in {1..24}; do
+            if curl -s http://localhost | grep -q "302 Found\|LibreNMS"; then
+              echo "LibreNMS is UP!"
+              exit 0
+            fi
+            echo "Waiting for LibreNMS... ($i)"
+            sleep 5
+          done
+          echo "LibreNMS failed to start in time"
+          docker compose logs librenms
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down
