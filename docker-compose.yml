@@ -2,38 +2,138 @@ version: '3'
 
 services:
   mysql:
-    image: mariadb
+    image: mariadb:10.5
     container_name: librenms-db
     volumes:
-      - ./mysql:/var/lib/mysql
-      - ./50-server.cnf:/etc/mysql/mariadb.conf.d/50-server.cnf:ro
+      - ./mysql:/var/lib/mysql:Z
+      - ./50-server.cnf:/etc/mysql/mariadb.conf.d/50-server.cnf:ro,Z
     environment:
       - MYSQL_ROOT_PASSWORD=pwd4librenms
       - MYSQL_DATABASE=librenms
-      - TZ=Europe/Berlin
+      - MYSQL_USER=librenms
+      - MYSQL_PASSWORD=pwd4librenms
+      - TZ=Asia/Taipei
     restart: always
 
+  redis:
+    image: redis:alpine
+    container_name: librenms-redis
+    restart: always
+
+  influxdb:
+    image: influxdb:1.8
+    container_name: librenms-influxdb
+    restart: always
+    environment:
+      - INFLUXDB_DB=librenms
+      - INFLUXDB_ADMIN_USER=librenms
+      - INFLUXDB_ADMIN_PASSWORD=pwd4influx
+    volumes:
+      - ./influxdb:/var/lib/influxdb
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: librenms-grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=pwd4grafana
+    volumes:
+      - ./grafana:/var/lib/grafana
+    depends_on:
+      - influxdb
+
   librenms:
-    image: seti/librenms
+    image: librenms/librenms:latest
     container_name: librenms
     hostname: librenms
     volumes:
-      - ./data:/data
+      - ./data:/data:Z
+      - ./custom-plugins:/usr/lib/monitoring-plugins/custom:Z
+      - ./custom-plugins/check_Dispatcher:/usr/lib/monitoring-plugins/check_Dispatcher:Z
+      - ./custom-plugins/check_domain:/usr/lib/monitoring-plugins/check_domain:Z
+      - ./test:/opt/librenms/html/test:Z
+      - ./includes/html/forms/transport-groups.inc.php:/opt/librenms/includes/html/forms/transport-groups.inc.php:ro,Z
+      - ./includes/polling/unix-agent.inc.php:/opt/librenms/includes/polling/unix-agent.inc.php:ro,Z
+      - ./includes/polling/applications/mssql.inc.php:/opt/librenms/includes/polling/applications/mssql.inc.php:ro,Z
+      - ./includes/html/graphs/application/mssql_user_connections.inc.php:/opt/librenms/includes/html/graphs/application/mssql_user_connections.inc.php:ro,Z
+      - ./includes/html/graphs/application/mssql_deadlocks.inc.php:/opt/librenms/includes/html/graphs/application/mssql_deadlocks.inc.php:ro,Z
+      - ./includes/html/graphs/application/mssql_buffer_cache.inc.php:/opt/librenms/includes/html/graphs/application/mssql_buffer_cache.inc.php:ro,Z
+      - ./includes/html/pages/device/apps/mssql.inc.php:/opt/librenms/includes/html/pages/device/apps/mssql.inc.php:ro,Z
     ports:
-      - 80:80
-      - 514:514/tcp
-      - 514:514/udp
+      - "80:8000"
     depends_on:
       - mysql
+      - redis
+      - influxdb
     environment:
-      - DB_TYPE=mysql
+      - PUID=983
+      - PGID=981
       - DB_HOST=mysql
       - DB_NAME=librenms
-      - DB_USER=root
-      - DB_PASS=pwd4librenms
-      - TZ=Europe/Berlin
-      - POLLER=24
-      - SERVICES_ENABLED=1
-      - UPDATE_CHANNEL=master
-      - SYSLOG_ENABLED=1
+      - DB_USER=librenms
+      - DB_PASSWORD=pwd4librenms
+      - REDIS_HOST=redis
+      - CACHE_STORE=redis
+      - TZ=Asia/Taipei
+      - LIBRENMS_INSTALL=true
+      - INFLUXDB_ENABLE=true
+      - INFLUXDB_TRANSPORT=http
+      - INFLUXDB_HOST=influxdb
+      - INFLUXDB_PORT=8086
+      - INFLUXDB_DB=librenms
+      - INFLUXDB_USER=librenms
+      - INFLUXDB_PASS=pwd4influx
+    restart: always
+
+  librenms-poller:
+    image: librenms/librenms:latest
+    container_name: librenms-poller
+    volumes:
+      - ./data:/data:Z
+      - ./custom-plugins:/usr/lib/monitoring-plugins/custom:Z
+      - ./custom-plugins/check_Dispatcher:/usr/lib/monitoring-plugins/check_Dispatcher:Z
+      - ./custom-plugins/check_domain:/usr/lib/monitoring-plugins/check_domain:Z
+      - ./includes/polling/unix-agent.inc.php:/opt/librenms/includes/polling/unix-agent.inc.php:ro,Z
+      - ./includes/polling/applications/mssql.inc.php:/opt/librenms/includes/polling/applications/mssql.inc.php:ro,Z
+      - ./includes/html/graphs/application/mssql_user_connections.inc.php:/opt/librenms/includes/html/graphs/application/mssql_user_connections.inc.php:ro,Z
+      - ./includes/html/graphs/application/mssql_deadlocks.inc.php:/opt/librenms/includes/html/graphs/application/mssql_deadlocks.inc.php:ro,Z
+      - ./includes/html/graphs/application/mssql_buffer_cache.inc.php:/opt/librenms/includes/html/graphs/application/mssql_buffer_cache.inc.php:ro,Z
+      - ./includes/html/pages/device/apps/mssql.inc.php:/opt/librenms/includes/html/pages/device/apps/mssql.inc.php:ro,Z
+    depends_on:
+      - mysql
+      - redis
+      - influxdb
+    environment:
+      - PUID=983
+      - PGID=981
+      - DB_HOST=mysql
+      - DB_NAME=librenms
+      - DB_USER=librenms
+      - DB_PASSWORD=pwd4librenms
+      - REDIS_HOST=redis
+      - CACHE_STORE=redis
+      - TZ=Asia/Taipei
+      - SIDECAR_DISPATCHER=1
+      - INFLUXDB_ENABLE=true
+      - INFLUXDB_TRANSPORT=http
+      - INFLUXDB_HOST=influxdb
+      - INFLUXDB_PORT=8086
+      - INFLUXDB_DB=librenms
+      - INFLUXDB_USER=librenms
+      - INFLUXDB_PASS=pwd4influx
+    restart: always
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: librenms-phpmyadmin
+    environment:
+      - PMA_HOST=mysql
+      - MYSQL_ROOT_PASSWORD=pwd4librenms
+    ports:
+      - "8080:80"
+    depends_on:
+      - mysql
     restart: always

@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Simple Domain Check for LibreNMS
+DOMAIN="www.newjr.com.tw"
+WARNING=30
+CRITICAL=10
+
+while getopts "d:w:c:" opt; do
+  case $opt in
+    d) DOMAIN=$OPTARG ;;
+    w) WARNING=$OPTARG ;;
+    c) CRITICAL=$OPTARG ;;
+  esac
+done
+
+if [ -z "$DOMAIN" ]; then
+  echo "USAGE: check_domain -d <domain> [-w days] [-c days]"
+  exit 3
+fi
+
+# 執行 whois 並抓取過期日
+EXP_DATE=$(whois "$DOMAIN" | grep -iE 'Registry Expiry Date|Expiration Date|Expires on|Expiry' | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+
+if [ -z "$EXP_DATE" ]; then
+  echo "UNKNOWN - 找不到 $DOMAIN 的過期日期格式"
+  exit 3
+fi
+
+# 計算日期差
+EXP_SECONDS=$(date -d "$EXP_DATE" +%s)
+NOW_SECONDS=$(date +%s)
+DIFF_SECONDS=$((EXP_SECONDS - NOW_SECONDS))
+DAYS_LEFT=$((DIFF_SECONDS / 86400))
+
+if [ "$DAYS_LEFT" -le "$CRITICAL" ]; then
+  echo "CRITICAL - $DOMAIN 剩餘 $DAYS_LEFT 天 (過期日: $EXP_DATE) | days=$DAYS_LEFT"
+  exit 2
+elif [ "$DAYS_LEFT" -le "$WARNING" ]; then
+  echo "WARNING - $DOMAIN 剩餘 $DAYS_LEFT 天 (過期日: $EXP_DATE) | days=$DAYS_LEFT"
+  exit 1
+else
+  echo "DOMAIN OK - $DOMAIN 剩餘 $DAYS_LEFT 天 (過期日: $EXP_DATE) | days=$DAYS_LEFT"
+  exit 0
+fi

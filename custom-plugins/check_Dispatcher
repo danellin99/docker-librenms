@@ -1,0 +1,36 @@
+#!/bin/bash
+
+export LANG=C
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# 萬無一失的絕對路徑
+SNMPWALK="/usr/bin/snmpwalk"
+GREP="/bin/grep"
+WC="/usr/bin/wc"
+
+HOST="192.168.20.21"
+COMMUNITY="public"
+PROCESS_NAME="Dispatcher"
+
+# 使用純數字 OID 進行全域走訪
+OID=".1.3.6.1.2.1.25.4.2.1.2"
+
+# 執行監控
+OUTPUT=$($SNMPWALK -v2c -r 1 -t 5 -c "$COMMUNITY" "$HOST" "$OID" 2>&1)
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ] || [ -z "$OUTPUT" ]; then
+    echo "CRITICAL - SNMP connection failed | 'count'=0;;;0;"
+    exit 2
+fi
+
+# 計算數量
+COUNT=$(echo "$OUTPUT" | $GREP -i "$PROCESS_NAME" | $WC -l)
+
+if [ "$COUNT" -gt 0 ]; then
+    echo "OK - Dispatcher process is running smoothly ($COUNT) | 'count'=$COUNT;;;0;"
+    exit 0
+else
+    echo "CRITICAL - Dispatcher process is stopped | 'count'=0;;;0;"
+    exit 2
+fi
